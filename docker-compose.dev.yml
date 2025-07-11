@@ -84,8 +84,6 @@ services:
     build:
       context: ./admin_ui
       dockerfile: Dockerfile
-    ports:
-      - "80:80"
     environment:
       - REACT_APP_API_URL=http://localhost:8000 # Nginx를 통해 외부로 노출되므로 localhost
     depends_on: [api_gateway]
