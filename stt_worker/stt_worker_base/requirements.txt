@@ -4,6 +4,6 @@ minio
 torch==2.1.0
 torchaudio==2.1.0
 openai-whisper
-numpy
+numpy<2.0
 tqdm
 tiktoken
