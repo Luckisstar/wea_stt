@@ -76,17 +76,19 @@ services:
       - "80:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - admin_ui_build:/usr/share/nginx/html/admin_ui # Mount admin_ui build output
     depends_on:
       - api_gateway
+      - admin_ui # Ensure admin_ui builds before nginx starts
     restart: always
 
   admin_ui:
     build:
       context: ./admin_ui
       dockerfile: Dockerfile
-    environment:
-      - REACT_APP_API_URL=http://localhost:8000 # Nginx를 통해 외부로 노출되므로 localhost
-    depends_on: [api_gateway]
+    volumes:
+      - admin_ui_build:/app/build
+    command: npm run build
 
 
   api_gateway:
@@ -218,3 +220,4 @@ volumes:
   postgres_data:
   prometheus_data:
   grafana_data:
+  admin_ui_build:
