@@ -122,7 +122,13 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
       # ... (이전과 동일)
-    depends_on: [kafka, postgres, api_gateway]
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_started
+      api_gateway:
+        condition: service_started
 
   admin_ui:
     build:
