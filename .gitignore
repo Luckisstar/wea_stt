@@ -32,8 +32,7 @@ yarn-error.log*
 Thumbs.db
 
 # Data directories
-minio_data/
-postgres_data/
+data/
 models/
 
 # Pytest cache
