@@ -14,11 +14,19 @@ MAX_RETRY = 3
 PROMETHEUS_PORT = 8001
 CHUNK_LENGTH_S = 30 # 30초 청크
 
+KAFKA_TARGET_TOPIC = os.getenv("KAFKA_TARGET_TOPIC")
+MODEL_NAME = os.getenv("MODEL_NAME", "base")
+
 # --- 🚀 초기화 ---
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 logging.info(f"Using device: {DEVICE}")
 
-consumer = create_kafka_consumer('stt_whisper_base_worker_group', ['audio_requests'])
+if not KAFKA_TARGET_TOPIC:
+    logging.critical("KAFKA_TARGET_TOPIC 환경 변수가 설정되지 않았습니다.")
+    exit(1)
+
+# consumer = create_kafka_consumer('stt_whisper_base_worker_group', ['audio_requests'])
+consumer = create_kafka_consumer(KAFKA_TARGET_TOPIC, "stt_worker_group_" + MODEL_NAME)
 producer = create_kafka_producer()
 minio_client = create_minio_client()
 
@@ -43,73 +51,60 @@ def get_audio_duration(file_path):
     return float(result.stdout.strip())
 
 # --- 🎧 메인 처리 루프 ---
-if __name__ == '__main__':
-    start_http_server(PROMETHEUS_PORT)
-    logging.info(f"Prometheus server started on port {PROMETHEUS_PORT}")
-    logging.info("Whisper Base STT Worker is running and waiting for tasks...")
-    for message in consumer:
-        task = message.value
+logging.info(f"'{KAFKA_TARGET_TOPIC}' 토픽을 구독하며, '{MODEL_NAME}' 모델로 대기합니다.")
+
+for message in consumer:
+    task = message.value
+    request_id = task.get("request_id")
+    
+    try:
+        # MinIO에서 파일 다운로드 (기존 로직과 동일)
+        object_name = task["audio_object_name"]
+        response = minio_client.get_object(AUDIO_BUCKET_NAME, object_name)
         
-        # 이 워커는 'tiny' 또는 'base' 모델만 처리
-        if task.get("model") not in ["tiny", "base"] or task.get("diarization", False):
-            continue
-
-        request_id = task.get("request_id")
-        model_name = task.get("model", "unknown")
-        REQUESTS_TOTAL.labels(model=model_name).inc()
-        logging.info(f"\nProcessing task: {request_id}")
-
-        start_time = time.time()
-        try:
-            object_name = task["audio_object_name"]
-            response = minio_client.get_object(AUDIO_BUCKET_NAME, object_name)
+        with tempfile.NamedTemporaryFile(delete=True) as tmp_file:
+            tmp_file.write(response.read())
+            tmp_file.flush()
             
-            with tempfile.NamedTemporaryFile(delete=True, suffix=".tmp") as original_audio_file:
-                original_audio_file.write(response.read())
-                original_audio_file.flush()
-
-                duration = get_audio_duration(original_audio_file.name)
-                full_transcription = ""
-                
-                model = get_model(model_name)
-                transcribe_options = {"language": task.get("language")}
-
-                for i in range(0, int(duration), CHUNK_LENGTH_S):
-                    with tempfile.NamedTemporaryFile(delete=True, suffix=".mp3") as chunk_file:
-                        cmd = [
-                            "ffmpeg",
-                            "-ss", str(i),
-                            "-i", original_audio_file.name,
-                            "-t", str(CHUNK_LENGTH_S),
-                            "-c", "copy",
-                            chunk_file.name
-                        ]
-                        subprocess.run(cmd, check=True, capture_output=True)
-                        
-                        chunk_result = model.transcribe(chunk_file.name, **transcribe_options)
-                        full_transcription += chunk_result["text"]
-
-            response.close()
-            response.release_conn()
-
-            processing_time = time.time() - start_time
-            PROCESSING_TIME.labels(model=model_name).observe(processing_time)
-            SUCCESSFUL_REQUESTS_TOTAL.labels(model=model_name).inc()
-            logging.info(f"✅ Transcription successful for task: {request_id}")
-            producer.send('stt_results', {'request_id': request_id, 'result': {"text": full_transcription}, 'original_task': task})
-
-        except Exception as e:
-            FAILED_REQUESTS_TOTAL.labels(model=model_name).inc()
-            logging.error(f"❌ Error processing task {request_id}: {e}")
+            # ✨ 환경 변수로 받은 모델 이름으로 모델 로드
+            model = get_model(MODEL_NAME)
+            transcribe_options = {"language": task.get("language")}
+            duration = get_audio_duration(tmp_file.name)
+            full_transcription = ""
             
-            current_retry = task.get('retry', 0)
-            if current_retry < MAX_RETRY:
-                task['retry'] = current_retry + 1
-                logging.info(f"Retrying task {request_id} (Attempt: {task['retry']})")
-                producer.send('audio_requests', task)
-            else:
-                logging.error(f"🚫 Task {request_id} failed after {MAX_RETRY} retries.")
-                producer.send('stt_errors', {'request_id': request_id, 'error': str(e), 'original_task': task})
+            # STT 처리 (기존 로직과 동일)
+            for i in range(0, int(duration), CHUNK_LENGTH_S):
+                with tempfile.NamedTemporaryFile(delete=True, suffix=".mp3") as chunk_file:
+                    cmd = [
+                        "ffmpeg",
+                        "-ss", str(i),
+                        "-i", tmp_file.name,
+                        "-t", str(CHUNK_LENGTH_S),
+                        "-c", "copy",
+                        chunk_file.name
+                    ]
+                    subprocess.run(cmd, check=True, capture_output=True)
+                    
+                    chunk_result = model.transcribe(chunk_file.name, **transcribe_options)
+                    full_transcription += chunk_result["text"]
+        
+        response.close()
+        response.release_conn()
 
-        finally:
-            producer.flush()
+        # 성공 결과 전송 (기존 로직과 동일)
+        producer.send('stt_results', {'request_id': request_id, 'result': full_transcription, 'original_task': task})
+
+    except Exception as e:
+        FAILED_REQUESTS_TOTAL.labels(model=MODEL_NAME).inc()
+        logging.error(f"❌ Error processing task {request_id}: {e}")
+        
+        current_retry = task.get('retry', 0)
+        if current_retry < MAX_RETRY:
+            task['retry'] = current_retry + 1
+            logging.info(f"Retrying task {request_id} (Attempt: {task['retry']})")
+            producer.send('audio_requests', task)
+        else:
+            logging.error(f"🚫 Task {request_id} failed after {MAX_RETRY} retries.")
+            producer.send('stt_errors', {'request_id': request_id, 'error': str(e), 'original_task': task})
+    finally:
+        producer.flush()

@@ -61,18 +61,22 @@ services:
     
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - KAFKA_TARGET_TOPIC=stt_requests_base  # ✨ base 워커는 이 토픽을 구독
+      - MODEL_NAME=base                     # ✨ base 모델을 로드
       - MINIO_URL=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
     depends_on: [kafka, minio]
 
-  # stt_worker_fast:
+  # stt_worker_medium:
   #   build:
   #     context: .
-  #     dockerfile: ./stt_worker/stt_worker_fast/Dockerfile
-  #   volumes: ["./stt_worker/stt_worker_fast:/app"]
+  #     dockerfile: ./stt_worker/stt_worker_medium/Dockerfile
+  #   volumes: ["./stt_worker/stt_worker_medium:/app"]
   #   environment:
   #     - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+  #     - KAFKA_TARGET_TOPIC=stt_requests_medium # ✨ medium 워커는 이 토픽을 구독
+  #     - MODEL_NAME=medium # ✨ medium 모델을 로드
   #     - MINIO_URL=minio:9000
   #     - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
   #     - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
@@ -85,6 +89,8 @@ services:
   #   volumes: ["./stt_worker/stt_worker_large:/app"]
   #   environment:
   #     - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+  #     - KAFKA_TARGET_TOPIC=stt_requests_large # ✨ large 워커는 이 토픽을 구독
+  #     - MODEL_NAME=large-v3 # ✨ large 모델을 로드  
   #     - MINIO_URL=minio:9000
   #     - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
   #     - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
@@ -94,9 +100,15 @@ services:
   #   build:
   #     context: .
   #     dockerfile: ./stt_worker/stt_worker_whisperx/Dockerfile
+  #    deploy: # GPU 할당
+  #      resources:
+  #        reservations:
+  #          devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
   #   volumes: ["./stt_worker/stt_worker_whisperx:/app"]
   #   environment:
   #     - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+  #     - KAFKA_TARGET_TOPIC=stt_requests_whisperx
+  #     - MODEL_NAME=large-v3
   #     - MINIO_URL=minio:9000
   #     - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
   #     - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
