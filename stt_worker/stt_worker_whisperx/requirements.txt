@@ -1,0 +1,8 @@
+prometheus-client
+kafka-python
+minio
+git+https://github.com/m-bain/whisperx.git
+pyannote.audio
+numpy<2
+tqdm
+tiktoken

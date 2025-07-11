@@ -1,0 +1,111 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Total Requests",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(stt_requests_total[5m]))",
+          "legendFormat": "Total Requests"
+        }
+      ]
+    },
+    {
+      "title": "Success Rate",
+      "type": "gauge",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(stt_successful_requests_total[5m])) / sum(rate(stt_requests_total[5m])) * 100",
+          "legendFormat": "Success Rate"
+        }
+      ]
+    },
+    {
+      "title": "P95 Processing Time",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(stt_processing_time_seconds_bucket[5m])) by (le))",
+          "legendFormat": "P95 Processing Time"
+        }
+      ]
+    },
+    {
+      "title": "API Gateway Requests",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{job=\"api_gateway\"}[5m])) by (status_code)",
+          "legendFormat": "{{status_code}}"
+        }
+      ]
+    },
+    {
+      "title": "Kafka Messages",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_topic_partition_current_offset[5m])) by (topic)",
+          "legendFormat": "{{topic}}"
+        }
+      ]
+    },
+    {
+      "title": "PostgreSQL Queries",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(pg_stat_database_xact_commit[5m])) by (datname)",
+          "legendFormat": "Commits"
+        },
+        {
+          "expr": "sum(rate(pg_stat_database_xact_rollback[5m])) by (datname)",
+          "legendFormat": "Rollbacks"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": [],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "STT System Dashboard",
+  "uid": "stt-system-dashboard",
+  "version": 1,
+  "weekStart": ""
+}

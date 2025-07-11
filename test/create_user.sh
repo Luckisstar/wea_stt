@@ -1,0 +1,1 @@
+docker-compose exec api_gateway python create_user.py
