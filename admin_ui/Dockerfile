@@ -1,5 +1,5 @@
 # 1단계: 빌드 환경
-FROM node:18-alpine as builder
+FROM node:18-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install

@@ -4,6 +4,3 @@ kafka-python==2.0.2
 # PostgreSQL 연동 (ORM + 드라이버)
 SQLAlchemy==2.0.30
 psycopg2-binary==2.9.9
-
-# API Gateway에 알림을 보내기 위한 HTTP 클라이언트
-requests==2.32.3
