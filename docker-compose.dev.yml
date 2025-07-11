@@ -1,0 +1,163 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    depends_on: [zookeeper]
+    ports: ["9092:9092"]
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:29092 --list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2023-05-04T21-44-30Z
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["./minio_data:/data"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    command: server /data --console-address ":9001"
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports: ["5432:5432"]
+    volumes: ["./postgres_data:/var/lib/postgresql/data"]
+
+  api_gateway:
+    build: ./api_gateway
+    ports: ["8000:8000"]
+    volumes: ["./api_gateway:/app"] # 개발 편의를 위한 볼륨 마운트
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      # ... (이전과 동일)
+    depends_on:
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      postgres:
+        condition: service_started
+
+  stt_worker_base:
+    build:
+      context: . # 프로젝트 루트를 빌드 컨텍스트로 설정
+      dockerfile: ./stt_worker/stt_worker_base/Dockerfile # Dockerfile 경로 지정
+    
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - MINIO_URL=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+    depends_on: [kafka, minio]
+
+  # stt_worker_fast:
+  #   build:
+  #     context: .
+  #     dockerfile: ./stt_worker/stt_worker_fast/Dockerfile
+  #   volumes: ["./stt_worker/stt_worker_fast:/app"]
+  #   environment:
+  #     - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+  #     - MINIO_URL=minio:9000
+  #     - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+  #     - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+  #   depends_on: [kafka, minio]
+
+  # stt_worker_large:
+  #   build:
+  #     context: .
+  #     dockerfile: ./stt_worker/stt_worker_large/Dockerfile
+  #   volumes: ["./stt_worker/stt_worker_large:/app"]
+  #   environment:
+  #     - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+  #     - MINIO_URL=minio:9000
+  #     - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+  #     - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+  #   depends_on: [kafka, minio]
+
+  # stt_worker_whisperx:
+  #   build:
+  #     context: .
+  #     dockerfile: ./stt_worker/stt_worker_whisperx/Dockerfile
+  #   volumes: ["./stt_worker/stt_worker_whisperx:/app"]
+  #   environment:
+  #     - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+  #     - MINIO_URL=minio:9000
+  #     - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+  #     - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+  #     - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+  #   depends_on: [kafka, minio]
+  
+  result_handler:
+    build: ./result_handler
+    volumes: ["./result_handler:/app"]
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      # ... (이전과 동일)
+    depends_on: [kafka, postgres, api_gateway]
+
+  admin_ui:
+    build:
+      context: ./admin_ui
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000 # Nginx를 통해 외부로 노출되므로 localhost
+    depends_on: [api_gateway]
+
+  # --- 모니터링 스택 ---
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - "9090:9090"
+    depends_on: [kafka-exporter, postgres-exporter]
+
+  grafana:
+    image: grafana/grafana:9.5.3
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    depends_on: [prometheus]
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.6.0
+    ports: ["9308:9308"]
+    command: --kafka.server=kafka:29092
+    depends_on: [kafka]
+    
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.12.0
+    ports: ["9187:9187"]
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    depends_on: [postgres]
+
+volumes:
+  minio_data:
+  postgres_data:
+  prometheus_data:
+  grafana_data:

@@ -24,10 +24,12 @@ minio_client = Minio(
     secure=False
 )
 
-producer = KafkaProducer(
-    bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-    value_serializer=lambda v: json.dumps(v).encode('utf-8')
-)
+# KafkaProducer를 필요할 때 생성
+def get_kafka_producer():
+    return KafkaProducer(
+        bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS"),
+        value_serializer=lambda v: json.dumps(v).encode('utf-8')
+    )
 
 @router.post("/v1/audio/transcriptions", status_code=status.HTTP_200_OK, tags=["STT"])
 async def create_transcription(
@@ -80,7 +82,10 @@ async def create_transcription(
         "retry": 0,
         "diarization": "diarization" in timestamp_granularities
     }
+
+    producer = get_kafka_producer()
     producer.send('audio_requests', message)
     producer.flush()
+    producer.close()
 
     return {"text": "Transcription in progress..."}

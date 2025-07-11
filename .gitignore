@@ -18,10 +18,10 @@ yarn-error.log*
 .pnp.js
 
 # Docker
-*.env
+# *.env
 *.env.example
-docker-compose.dev.yml
-docker-compose.prod.yml
+# docker-compose.dev.yml
+# docker-compose.prod.yml
 
 # IDEs
 .idea/
